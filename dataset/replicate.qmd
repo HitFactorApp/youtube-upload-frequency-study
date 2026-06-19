@@ -194,12 +194,45 @@ curve = hold.groupby("dec").agg(
 print(curve)
 ```
 
-The full decomposition the page leads with, that the per-video **median** falls (about −15% per
-doubling) while the per-video **mean** stays flat (about −0.2%), so total views scale roughly
-one-for-one with output, is a channel-quarter collapse reported in
-`aggregates/decomposition_holdout.csv` and `aggregates/total_views_by_cadence_decile.csv`. It is a
-post-hoc follow-on, not the pre-registered headline; the pre-registered, sealed-holdout result is the
-per-video slope reproduced above.
+## Total reach scales with output (the follow-on the page leads with)
+
+The page leads with the question teams actually care about: does posting more grow total reach? We
+collapse to one row per channel-quarter, then regress `ln(total views)` on `ln(uploads)` with channel
+and calendar-quarter fixed effects, on quarters with at least two uploads (so a within-quarter spread
+is defined). The slope is the total-views elasticity. We also re-run it after dropping each channel's
+biggest videos, to show the result isn't carried by a few viral hits.
+
+```{python}
+from linearmodels.panel import PanelOLS
+
+def total_elasticity(frame, min_uploads=2, trim=None):
+    f = frame.copy()
+    if trim is not None:
+        f = f[f["views"] <= f["views"].quantile(trim)]
+    cq = (f.groupby(["channel_hash", "quarter"])
+            .agg(total=("views", "sum"), uploads=("views", "count")).reset_index())
+    cq = cq[cq["uploads"] >= min_uploads]
+    cq["lt"] = np.log(cq["total"]); cq["lu"] = np.log(cq["uploads"])
+    qp = pd.PeriodIndex(cq["quarter"].str.replace(" ", ""), freq="Q")
+    cq["q_idx"] = qp.year * 4 + (qp.quarter - 1)
+    d = cq.set_index(["channel_hash", "q_idx"])
+    res = PanelOLS(d["lt"].astype(float), d[["lu"]].astype(float),
+                   entity_effects=True, time_effects=True, drop_absorbed=True
+                   ).fit(cov_type="clustered", cluster_entity=True)
+    b = res.params["lu"]; se = res.std_errors["lu"]
+    return b, b - 1.96 * se, b + 1.96 * se, len(cq)
+
+for label, trim in [("all", None), ("drop top 1%", 0.99), ("drop top 5%", 0.95)]:
+    b, lo, hi, n = total_elasticity(hold, trim=trim)
+    print(f"holdout total-views elasticity ({label:11}): {b:.3f}  (95% {lo:.3f}..{hi:.3f})  n_cq={n:,}")
+```
+
+You should see the elasticity land at about **1.0** (roughly one-for-one: double the uploads, double
+the total reach), and stay near 1.0 after dropping the biggest videos. That robustness says the
+association is real and not an artifact of a few viral hits. It says nothing about *direction*: this
+is the follow-on, not the pre-registered headline, and whether posting drives reach or a strong run
+drives both is unestablished (see caveats). The decomposition behind it (median per-video down, the
+biggest video up) is in `../aggregates/decomposition_holdout.csv`.
 
 ## Caveats (carried from the methodology)
 

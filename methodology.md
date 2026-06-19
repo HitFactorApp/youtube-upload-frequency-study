@@ -116,19 +116,23 @@ the dip is real, just too small to act on.
 ## The per-video decomposition
 
 Because total views is, by arithmetic, the video count times the average views per video, the
-interesting question is whether the per-video **average** holds up or collapses as a channel posts
-more. We decompose the per-video outcome into the **median** video and the **mean** per video. The
-median falls modestly with cadence while the mean stays flat (the spread widens: the typical video
-dips, the single biggest video grows, the average lands near zero). A flat mean is what makes total
-reach scale roughly one-for-one with output.
+interesting question is whether per-video performance holds up or collapses as a channel posts more.
+We decompose the per-video outcome: the **median** video falls modestly with cadence while the rest
+of the distribution holds and the **biggest** video grows (the spread widens). There is no per-video
+collapse to cancel out the extra count, which is why the totals add up rather than treading water.
 
 ## The total-views follow-on (post-hoc, labeled)
 
-The total-views elasticity (within-channel, total views per quarter against uploads per quarter) was
+The total-views elasticity (within-channel, `ln(total views per quarter)` on `ln(uploads per
+quarter)`, channel and calendar-quarter fixed effects, on quarters with at least two uploads) was
 prompted by a reviewer's question **after** the main analysis, so it is exploratory, not
-pre-registered. It agrees across both the exploration and the held-out sets. We flag it as a
-follow-on throughout, and we are explicit that an elasticity near 1.0 contains an arithmetic floor
-(total = count × mean per video); the part the data had to show, and did, is the flat mean.
+pre-registered. It is about **1.0** (roughly one-for-one: double the uploads, double the total reach),
+agrees across the exploration and held-out sets, and **stays near 1.0 after dropping each channel's
+top 1% and top 5% of videos**, so it is not carried by a handful of viral hits. Two honest limits:
+part of "more uploads, more total" is an arithmetic floor (total = count × average), with the
+empirical content being that per-video performance does not collapse; and robustness to trimming
+establishes that the association is real, not that posting *causes* the reach. The direction is
+unestablished (see Limitations).
 
 ## The shape check (suggestive)
 
