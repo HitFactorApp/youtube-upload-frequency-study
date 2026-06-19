@@ -92,14 +92,26 @@ intervals, and a practical-significance threshold (a ±15% step per doubling) de
 
 ## The decision rule
 
-The per-video headline is graded against a three-state rule fixed in advance, with a ±15% step per
-doubling as the practical bar:
+The per-video headline is graded against a rule fixed in advance, with a ±15% step per doubling as the
+practical bar:
 
 - **meaningful**: the interval excludes zero and the point is at least ±15%;
-- **inconclusive**: ±15% sits inside the interval (too wide to separate a real effect from a null);
-- **precise null**: the interval includes zero and lies entirely within ±15%.
+- **present but trivial**: the interval excludes zero (a real, statistically clear association) but
+  lies entirely within ±15%, so the effect is too small to act on;
+- **precise null**: the interval includes zero and lies entirely within ±15%;
+- **inconclusive**: ±15% sits inside the interval (too wide to separate a real effect from a null).
 
-A precise null is a finding (the effect is bounded small), not a power failure.
+The headline lands in **present but trivial**: about −10% per doubling (CI roughly −12% to −8.5%), an
+interval that excludes zero but sits inside the ±15% bar. It is not a null (zero is ruled out); it is
+a real but practically trivial dip. Both "present but trivial" and "precise null" are findings (the
+effect is bounded small), not power failures.
+
+The pre-registration defined a single combined verdict bucket ("precise null / trivial: the entire CI
+sits inside ±15%, whether or not it includes zero") for any effect that lands inside the practical
+bar. That bucket is unchanged; here we split it into its two readable cases ("present but trivial"
+when the CI excludes zero, "precise null" when it includes zero) so the public wording matches the
+result. This headline is the first case, so calling it a "null" in plain copy would misdescribe it:
+the dip is real, just too small to act on.
 
 ## The per-video decomposition
 

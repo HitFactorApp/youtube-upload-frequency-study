@@ -34,8 +34,9 @@ underlying view counts, because the raw identifiers are not in the dataset by de
 terms forbid republishing them). This is **methods reproduction, not measurement verification**.
 
 The headline you should reproduce: **within a channel, videos published when it was posting more earn
-about the same views per day**, a held-out estimate of about **−10% per doubling** of local cadence,
-entirely inside the ±15% practical bar set in advance. A precise null, not "we couldn't tell."
+about the same views per day**, a held-out estimate of about **−10% per doubling** of local cadence.
+The interval excludes zero but sits entirely inside the ±15% practical bar set in advance: a small,
+precisely-estimated dip that is too small to act on, not a null and not "we couldn't tell."
 
 ## Setup
 

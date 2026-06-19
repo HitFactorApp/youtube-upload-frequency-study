@@ -28,10 +28,12 @@ pre-reg was tagged (`003-v1-preregistration`) before any frequency-vs-views quer
 
 ## Result
 
-**A precise null per video: about −10% change in views per day per doubling of cadence (95% CI
-roughly −12% to −9%), held-out.** Within a channel, videos published when it was posting more earn
-about the same views per day, far too small a move to be the "post more, grow faster" lift the advice
-promises, and the interval sits inside the ±15% practical bar set in advance.
+**A small, precisely-estimated dip per video: about −10% change in views per day per doubling of
+cadence (95% CI roughly −12% to −9%), held-out.** The interval excludes zero, so this is not a null;
+it is a real negative association that is **practically trivial**, sitting entirely inside the ±15%
+"worth acting on" bar we set in advance. Within a channel, videos published when it was posting more
+earn about the same views per day, far too small a move to be the "post more, grow faster" lift the
+advice promises.
 
 Total reach still rises: because the per-video **mean** stays flat while the count grows, total views
 scale roughly one-for-one with output ("bigger pie, same slices"). That total-views view is a

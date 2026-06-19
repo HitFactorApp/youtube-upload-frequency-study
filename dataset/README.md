@@ -44,7 +44,8 @@ reported two ways (pooled fixed effects and one-channel-one-vote).
 4. **Cluster.** Bootstrap by resampling **channels** (not videos) with replacement.
 5. **Filter to `holdout = 1`** for the held-out headline; use `holdout = 0` for the exploration set.
 
-The per-video effect is a small, bounded null (the mean per video is flat); the binned curves and the
+The per-video effect is a small, precisely-estimated dip (about −10% per doubling, CI excluding zero
+but inside the ±15% bar: present but practically trivial, not a null); the binned curves and the
 median/mean decomposition behind every chart are in `../aggregates/`.
 
 ## De-identification
