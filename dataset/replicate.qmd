@@ -1,0 +1,215 @@
+---
+title: "Replicate: Does Posting More Get You More Views?"
+subtitle: "A self-contained reproduction of the study's headline from the public de-identified dataset"
+format:
+  html:
+    theme: cosmo
+    toc: true
+    toc-depth: 2
+    code-fold: false
+    fig-width: 7
+    fig-height: 4
+    embed-resources: true
+execute:
+  echo: true
+  warning: false
+---
+
+## What this notebook is
+
+This notebook reproduces the published per-video headline of the study **"Does Posting More
+Get You More Views?"** using nothing but the public de-identified dataset shipped beside it
+(`upload_frequency_vpd_deidentified.csv`) and two standard Python libraries. There are **no
+proprietary inputs**: no raw YouTube data, no real video or channel identifiers, no database.
+
+Unlike a study whose predictor is a given column, this one's predictor is **constructed**: the
+upload-cadence window is rebuilt here, from scratch, out of the `publish_date` column. That is the
+point of releasing publish dates at day resolution, so a replicator can falsify the
+predictor-construction logic (the 60-day lagged rolling window), not just the regression.
+
+**What it proves, and what it does not.** It re-derives our *statistics*: a replicator can rebuild
+the cadence predictor, re-run the within-channel fixed-effects panel, the channel clustering, and the
+bootstrap, and catch a coding or specification error. It does **not** let anyone re-verify the
+underlying view counts, because the raw identifiers are not in the dataset by design (YouTube's API
+terms forbid republishing them). This is **methods reproduction, not measurement verification**.
+
+The headline you should reproduce: **within a channel, videos published when it was posting more earn
+about the same views per day**, a held-out estimate of about **−10% per doubling** of local cadence,
+entirely inside the ±15% practical bar set in advance. A precise null, not "we couldn't tell."
+
+## Setup
+
+```{python}
+from pathlib import Path
+import numpy as np
+import pandas as pd
+
+CSV = Path("upload_frequency_vpd_deidentified.csv")
+df = pd.read_csv(CSV, parse_dates=["publish_date", "view_capture_date"])
+
+# Locked parameters (identical to the pre-registration; see methodology.md).
+CADENCE_WINDOW_DAYS = 60   # the rolling window for the local-cadence predictor
+BOOTSTRAP_N = 10_000
+SEED = 0
+
+print(f"rows: {len(df):,}   channels: {df.channel_hash.nunique():,}")
+df.head(3)
+```
+
+The file already carries only analysis-eligible rows (the age and view floors were applied when it
+was built), and every row is a *qualifying upload*, so the cadence window can be built from the file
+alone with nothing external.
+
+## The identifying subset: channels that varied their cadence
+
+The within-channel headline only has identifying variation for channels whose cadence actually
+*changed* over time. The plan fixed that subset in advance: a channel needs at least **8 active
+quarters** (quarters with at least one qualifying upload) **and** a cadence that varies at least
+**2×** across active quarters (its busiest active quarter has at least twice the uploads of its
+quietest). A channel that always posts at the same rate carries no within-channel signal and is
+excluded. The headline describes "channels that varied their cadence."
+
+```{python}
+df["quarter"] = df["publish_date"].dt.to_period("Q").astype(str)
+
+q = df.groupby(["channel_hash", "quarter"]).size().rename("uploads_q").reset_index()
+prof = q.groupby("channel_hash")["uploads_q"].agg(active_quarters="count", mx="max", mn="min")
+prof["variation"] = prof["mx"] / prof["mn"].clip(lower=1)
+identifying = prof.index[(prof["active_quarters"] >= 8) & (prof["variation"] >= 2.0)]
+
+b = df[df["channel_hash"].isin(identifying)].copy()
+print(f"identifying channels: {len(identifying):,}   rows: {len(b):,}")
+```
+
+## Build the predictor: a 60-day lagged rolling cadence window
+
+On the identifying subset, for each video `window_uploads` is the count of the channel's **other**
+qualifying uploads whose `publish_date` falls in the **60 days strictly before** this video's own
+`publish_date` (the lag: the cadence leading up to the video, excluding it). The predictor is
+`ln(1 + window_uploads)`. A `truncated_window` flag marks videos whose 60-day pre-window predates the
+channel's first observed upload (a left-censoring covariate the model includes). We build it per
+channel with a two-pointer sweep over sorted publish dates, identical to the analysis code.
+
+```{python}
+def add_window_cadence(frame, window_days=CADENCE_WINDOW_DAYS):
+    win = np.timedelta64(window_days, "D")
+    frame = frame.sort_values(["channel_hash", "publish_date"]).copy()
+    counts = np.empty(len(frame), dtype=np.int64)
+    trunc = np.empty(len(frame), dtype=bool)
+    pos = 0
+    for _, g in frame.groupby("channel_hash", sort=False):
+        ts = g["publish_date"].to_numpy("datetime64[ns]")
+        n = len(ts)
+        first = ts[0]
+        for i in range(n):
+            lo = ts[i] - win
+            left = np.searchsorted(ts, lo, side="left")
+            counts[pos + i] = max(0, i - left)   # uploads in [lo, ts[i]); exclude self at i
+            trunc[pos + i] = lo < first          # window predates the channel's first upload
+        pos += n
+    frame["window_uploads"] = counts
+    frame["ln_cadence"] = np.log1p(frame["window_uploads"])
+    frame["truncated_window"] = trunc.astype(float)
+    return frame
+
+b = add_window_cadence(b)
+
+# Outcome and covariate: views per day on the pinned clock, age, calendar-quarter index.
+b["ln_vpd"] = np.log(b["views"] / b["age_days"])
+b["ln_age"] = np.log(b["age_days"])
+qp = b["publish_date"].dt.to_period("Q")
+b["quarter_idx"] = qp.dt.year * 4 + (qp.dt.quarter - 1)   # numeric quarter for the time effect
+
+print(b[["window_uploads", "ln_cadence", "ln_vpd"]].describe().round(3))
+```
+
+## The estimator
+
+The headline is a **within-channel** slope of `ln(views per day)` on `ln(1 + cadence)`, holding age
+constant, with **channel** and **calendar-quarter** fixed effects and the left-censoring flag as a
+covariate, reported as a percent change in views per day per **doubling** of cadence. Standard errors
+are **clustered by channel** (videos in a channel are not independent). We use `linearmodels`'
+two-way `PanelOLS`, the same estimator the analysis used, so the reproduction is exact rather than an
+approximation.
+
+```{python}
+from linearmodels.panel import PanelOLS
+
+def headline(frame):
+    """Two-way FE (channel + calendar quarter) slope of ln_vpd on cadence + ln_age +
+    truncated_window, channel-clustered. Returns % per doubling and its 95% CI."""
+    d = frame.set_index(["channel_hash", "quarter_idx"])
+    exog = d[["ln_cadence", "ln_age", "truncated_window"]].astype(float)
+    # drop the censoring flag if it is constant in this slice (collinear with the intercept)
+    exog = exog.loc[:, [c for c in exog.columns if c == "ln_cadence" or exog[c].nunique() > 1]]
+    res = PanelOLS(d["ln_vpd"].astype(float), exog,
+                   entity_effects=True, time_effects=True, drop_absorbed=True
+                   ).fit(cov_type="clustered", cluster_entity=True)
+    beta = res.params["ln_cadence"]; se = res.std_errors["ln_cadence"]
+    pd_ = lambda x: 100.0 * (2.0 ** x - 1.0)   # per-doubling back-transform
+    return {
+        "pct": pd_(beta), "ci_lo": pd_(beta - 1.96 * se), "ci_hi": pd_(beta + 1.96 * se),
+        "n_channels": d.index.get_level_values(0).nunique(), "n_videos": len(frame),
+    }
+```
+
+## Headline (the held-out result)
+
+The published headline comes from the held-out 20% of channels (`holdout == 1`), the slice the
+analysis never used while choosing the specification. The exploration set (`holdout == 0`) is the
+confirming companion.
+
+```{python}
+hold = b[b["holdout"] == 1]
+expl = b[b["holdout"] == 0]
+
+for name, frame in [("HOLDOUT (headline)", hold), ("exploration", expl)]:
+    r = headline(frame)
+    print(f"{name:20}  VPD per doubling of cadence   "
+          f"{r['pct']:+.1f}% ({r['ci_lo']:+.1f}..{r['ci_hi']:+.1f})   "
+          f"n_ch={r['n_channels']:,}  n_vid={r['n_videos']:,}")
+```
+
+You should see the holdout land near **−10% per doubling** (about −10.4%, 95% CI roughly −12.2 to
+−8.6), comfortably inside the ±15% practical bar and below zero: within a channel, posting more is
+tied to a small *dip* in views per day per video, far too small to be the "post more, grow faster"
+lift the advice promises. The exploration set agrees (about −9.4%). This is the pre-registered,
+sealed-holdout headline the page leads with.
+
+## The typical video dips with cadence (the shape behind the headline)
+
+The per-video headline above is one number; the descriptive shape behind it is that the **typical
+(median)** video earns a bit less per day as a channel's cadence rises. Sorting the held-out videos
+into cadence deciles, the median views per day climbs to a peak around weekly cadence, then falls at
+the highest cadences, the same decile curve the page plots (`aggregates/pervideo_vpd_by_cadence_decile.csv`).
+
+```{python}
+hold = hold.copy()
+hold["dec"] = pd.qcut(hold["window_uploads"].rank(method="first"), 10, labels=False) + 1
+curve = hold.groupby("dec").agg(
+    med_vpd=("views", lambda v: np.median(v / hold.loc[v.index, "age_days"])),
+    med_uploads=("window_uploads", "median"),
+).round(2)
+print(curve)
+```
+
+The full decomposition the page leads with, that the per-video **median** falls (about −15% per
+doubling) while the per-video **mean** stays flat (about −0.2%), so total views scale roughly
+one-for-one with output, is a channel-quarter collapse reported in
+`aggregates/decomposition_holdout.csv` and `aggregates/total_views_by_cadence_decile.csv`. It is a
+post-hoc follow-on, not the pre-registered headline; the pre-registered, sealed-holdout result is the
+per-video slope reproduced above.
+
+## Caveats (carried from the methodology)
+
+- **Observational, and the direction is unknown.** Posting cadence is a channel behavior bundled with
+  others (a hot streak, a new editor, a budget change) this design cannot fully separate. Read every
+  result as "associated with," never "causes," and note we do not claim the direction.
+- **Methods reproduction only.** You can rebuild the predictor and re-run the statistics; you cannot
+  re-verify the view counts from this file (raw data is not republished, by ToS).
+- **The total-views elasticity is a follow-on**, prompted after the main analysis; it is not
+  pre-registered. The per-video slope above is the pre-registered, sealed-holdout headline.
+- **Sampling frame.** English-language business and creator-economy channels from our funnel, skewed
+  mid-to-large and toward frequent posters: not a random sample of YouTube.
+
+See `methodology.md` and `README.md` for the full method and the dataset's column definitions.
